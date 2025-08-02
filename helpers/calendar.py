@@ -12,7 +12,7 @@ from dateparser.search import search_dates
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
 
-def get_days_range_from_query(query: str, default_days: int = 7):
+def get_days_range_from_query(query: str) -> int:
     query_lower = query.lower()
     now = datetime.now()
 
@@ -62,14 +62,14 @@ def get_calendar_service():
     """Authenticate and return a Google Calendar service instance."""
     creds = None
     # token.json stores the user's access and refresh tokens.
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists('.secrets/token.json'):
+        creds = Credentials.from_authorized_user_file('.secrets/token.json', SCOPES)
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file('.secrets/credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run.
         with open('token.json', 'w') as token:
@@ -77,45 +77,67 @@ def get_calendar_service():
     service = build('calendar', 'v3', credentials=creds)
     return service
 
-def get_upcoming_events(service, query, max_results=5):
-    """Retrieve the next n upcoming events from the primary calendar."""
-    # Extract time range
+def get_upcoming_events(service, query, max_results=50):
+    """Retrieve upcoming events across all calendars based on the user's query."""
+    
+    # Extract time range from query
     days = get_days_range_from_query(query)
     print(f'DAYS RECEIVED: {days}')
     if days == 0:
         days = 365
+
     now = datetime.now()
     future = now + timedelta(days=days)
 
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=now.isoformat() + 'Z',
-        timeMax=future.isoformat() + 'Z',
-        maxResults=max_results,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
+    # Get all user-accessible calendars
+    calendars_result = service.calendarList().list().execute()
+    calendars = calendars_result.get('items', [])
 
-    events = events_result.get('items', [])
+    all_events = []
 
-    if not events:
+    for calendar in calendars:
+        calendar_id = calendar['id']
+        try:
+            events_result = service.events().list(
+                calendarId=calendar_id,
+                timeMin=now.isoformat() + 'Z',
+                timeMax=future.isoformat() + 'Z',
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            events = events_result.get('items', [])
+            for event in events:
+                event['calendarSummary'] = calendar.get('summary', calendar_id)  # Tag calendar name
+                all_events.append(event)
+        except Exception as e:
+            print(f"⚠️ Could not retrieve events from calendar '{calendar_id}': {e}")
+
+    if not all_events:
         print(f"You have no events in the next {days} day{'s' if days > 1 else ''}.")
         return f"You have no events in the next {days} day{'s' if days > 1 else ''}."
 
+    # Sort all events by start time
+    all_events.sort(key=lambda e: e['start'].get('dateTime', e['start'].get('date')))
+
+    # Format the output
     lines = []
-    for event in events:
+    for event in all_events[:max_results]:
         start_raw = event['start'].get('dateTime', event['start'].get('date'))
-        # Convert ISO datetime to readable local time string
         try:
-            dt_obj = datetime.datetime.fromisoformat(start_raw.replace('Z', '+00:00'))
+            dt_obj = dt.datetime.fromisoformat(start_raw.replace('Z', '+00:00'))
             start_str = dt_obj.strftime("%A, %B %d at %-I:%M %p")
         except Exception:
-            start_str = start_raw  # fallback
+            start_str = start_raw
         summary = event.get('summary', 'No title')
-        lines.append(f"- {summary} on {start_str}")
+        calendar_name = event.get('calendarSummary', 'Unknown Calendar')
+        lines.append(f"- {summary} on {start_str} (from {calendar_name})")
+
     x = "\n".join(lines)
     print(x)
     return x
+
 
 def create_event(service, summary, start_datetime, end_datetime, timezone='UTC'):
     """Create a new event on the primary calendar.

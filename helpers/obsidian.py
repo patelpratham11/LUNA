@@ -16,34 +16,14 @@ def setup_obsidian():
     Return:
         BaseQueryEngine: Query Engine to utilize
     """
+    # ========== SETUP ==========
     vault_path = "/Users/patelpratham11/Documents/Pratham"
     embedding_model = "mxbai-embed-large"
-
-    # === EMBEDDINGS ===
-    # Settings.embed_model = OllamaEmbedding(model_name=embedding_model)
-
-    # === LOAD OR BUILD INDEX ===
-    # if os.path.exists(storage_path):
-    #     print("📦 Loading index from storage...")
-    #     storage_context = StorageContext.from_defaults(persist_dir=storage_path)
-    #     index = load_index_from_storage(storage_context, llm=llm)
-    # else:
-    #     print("🛠 Building index from markdown files...")
-    #     documents = SimpleDirectoryReader(
-    #         vault_path, recursive=True, required_exts=[".md"]
-    #     ).load_data()
-    #     index = VectorStoreIndex.from_documents(documents, llm=llm)
-    #     index.storage_context.persist(persist_dir=storage_path)
-
-    # query_engine = index.as_query_engine(llm=llm)
-    # return query_engine
-
-
     embeddings = OllamaEmbeddings(model=embedding_model)
-
     db_location = "./chrome_langchain_db"
     add_documents = not os.path.exists(db_location)
 
+    # ========== CREATE VECTOR STORE ==========
     if add_documents:
         documents = []
         ids = []
@@ -83,7 +63,9 @@ def setup_obsidian():
 
     if add_documents:
         vector_store.add_documents(documents=documents, ids=ids)
-        
+    
+    # ========== RETRIEVER ==========
+    # retrieves the top 5 most relevant documents based on the query
     retriever = vector_store.as_retriever(
         search_kwargs={"k": 5}
     )

@@ -23,7 +23,7 @@ def detect_intent(query:str, llm: any) -> str:
         - calendar → anything involving scheduling, upcoming/past events, meetings, reminders, times, or dates
         - notes → anything about files, saved information, user thoughts, to-do lists, or written content
         - weather → anything about the weather, temperature, precipitation, etc.
-        - general → casual conversation, questions, or anything that does not involve the calendar or notes
+        - general → anything else that doesn't fit the above categories
 
         Respond with only the intent keyword: calendar, notes, weather, or general.
 
@@ -44,7 +44,25 @@ def detect_intent(query:str, llm: any) -> str:
         Intent: general
 
         Query: What’s the weather like today?  
-        Intent: general
+        Intent: weather
+
+        Query: Will it rain tomorrow in New York?
+        Intent: weather
+
+        Query: What's the temperature going to be like this weekend?
+        Intent: weather
+
+        Query: Do I need an umbrella today?
+        Intent: weather
+
+        Query: Show me my grocery list
+        Intent: notes
+
+        Query: Add “call the plumber” to my to-do list
+        Intent: notes
+
+        Query: What did I write down about the networking event?
+        Intent: notes
 
         Now classify this query:
         Query: {query}

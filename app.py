@@ -6,10 +6,16 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable
 
+# === SETUP ===
+
+# LLM and tools
 model_name = "phi3:mini"
 llm = OllamaLLM(model=model_name)
-weather_engine = setup_weather()
 obsidian_query_engine = setup_obsidian()
+weather_engine = setup_weather()
+calendar = get_calendar_service()
+
+# Metaprompt
 metaprompt = (
     "You are Luna, an AI assistant modeled after Jarvis from Iron Man. "
     "Respond concisely and precisely, using polite but direct language. "
@@ -21,65 +27,64 @@ metaprompt = (
     "Prioritize accuracy and brevity in every response."
 )
 
-
+# PromptTemplate
 template = PromptTemplate.from_template(
-    "Answer conversationally:\n\n{question}\n\nMake sure you're aware of the metaprompt:\n\n{metaprompt}"
+    "Question:\n{question}\n\nRespond as Luna, using the following guidance:\n{metaprompt}"
 )
+
+# Chain
 chain: Runnable = template | llm
 
-# calendar = get_calendar_service()
+
+# === HANDLERS ===
+
+def answer_with_context(context: str, query: str) -> str:
+    full_prompt = (
+        f"The user asked: '{query}'\n"
+        f"{context}\n"
+        "Use ONLY this information to answer the question. "
+        "Respond naturally and conversationally, like Jarvis would, without bullet points or lists."
+    )
+    return chain.invoke({
+        "question": full_prompt,
+        "metaprompt": metaprompt
+    })
 
 
-# === QUERY LOOP ===
-while True:
-    query = input("\nAsk Luna a question (or 'exit'): ")
-    if query.lower() in ['exit', 'quit']:
-        break
-    router = detect_intent(query, llm)
-    if router == "calendar":
-        print("calendar detected")
-        events = get_upcoming_events(calendar, query)
-        add = (
-            f"The user asked: '{query}'. Here are the calendar events within the requested time frame:\n{events}\n"
-            "Use ONLY these events to answer the question. "
-            "Respond naturally and conversationally, like Jarvis would, without bullet points or lists."
-        )
-        response = chain.invoke({
-            "question": add,
-            "metaprompt": metaprompt
-        })
-    elif router == "notes":
-        print("🔎 Using Obsidian notes...")
-        information = obsidian_query_engine.invoke(query)
-        add = (
-            f"The user asked: '{query}'. Here is the information from the vector database. Please use this information to answer the question as best as possible.:\n{information}\n"
-            "Use ONLY this information to answer the question. "
-            "Respond naturally and conversationally, like Jarvis would, without bullet points or lists."
-        )
-        response = chain.invoke({
-            "question": add,
-            "metaprompt": metaprompt
-        })
-        # response = obsidian_query_engine.query(query)
-    elif router == "weather":
-        print("☀️ Gathering Weather Data")
-        results = get_weather()['current']
-        add = (
-            f"The user asked: '{query}'. Here's the weather as a JSON:\n{results}\n"
-            "Use ONLY these events to answer the question. "
-            "Respond naturally and conversationally, like Jarvis would, without bullet points or lists."
-        )
-        print(add)
-        response = chain.invoke({
-            "question": add,
-            "metaprompt": metaprompt
-        })
-    else:
-        print("💬 Answering directly...")
-        response = chain.invoke({
-            "question": query,
-            "metaprompt": metaprompt
-        })
+# === MAIN LOOP ===
 
-    print("\Luna says:\n", response)
-    speak(str(response))
+if __name__ == "__main__":
+    while True:
+        query = input("\nAsk Luna a question (or 'exit'): ")
+        if query.lower() in ['exit', 'quit']:
+            break
+
+        router = detect_intent(query, llm)
+
+        if router == "calendar":
+            print("📅 Calendar intent detected...")
+            events = get_upcoming_events(calendar, query)
+            context = f"Here are the calendar events within the requested time frame:\n{events}"
+            response = answer_with_context(context, query)
+
+        elif router == "notes":
+            print("🗒️ Searching Obsidian notes...")
+            notes = obsidian_query_engine.invoke(query)
+            context = f"Here is the information retrieved from your personal notes:\n{notes}"
+            response = answer_with_context(context, query)
+
+        elif router == "weather":
+            print("☀️ Gathering weather data...")
+            weather = get_weather()
+            context = f"Here's the current weather as a JSON:\n{weather}"
+            response = answer_with_context(context, query)
+
+        else:
+            print("💬 General query detected...")
+            response = chain.invoke({
+                "question": query,
+                "metaprompt": metaprompt
+            })
+
+        print("\nLuna says:\n", response)
+        # speak(str(response))  # Uncomment if needed
